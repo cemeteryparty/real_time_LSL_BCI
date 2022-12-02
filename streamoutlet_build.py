@@ -1,3 +1,8 @@
+from torch_CLEEGN.utils.cleegn import CLEEGN
+from torch import from_numpy as np2TT
+from torchinfo import summary
+import torch
+
 from pylsl import StreamInlet
 from pylsl import StreamOutlet
 from pylsl import StreamInfo
@@ -7,7 +12,7 @@ from PyQt5.QtCore import QThread
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import Qt
 
-from tensorflow.keras.models import load_model
+# from tensorflow.keras.models import load_model
 from scipy import signal
 import numpy as np
 import pylsl
@@ -17,6 +22,7 @@ import copy
 # import mne
 import os
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 # # first resolve an EEG stream on the lab network
@@ -24,9 +30,17 @@ print("looking for an EEG stream...")
 streams = resolve_stream('type', 'EEG')
 for stream in streams:
     print(stream.name())
-# stream_id = input('Select steam...')
-model = load_model("bci_8chan.h5")
-model.summary()
+""" model = load_model("bci_8chan.h5")
+model.summary() """
+state_path = os.path.join(
+    "torch_CLEEGN/tmpfile/bc-12_0010.12_3040.4_8ch",
+    "set_{}/{}.pth".format(1, "bc-8chan")
+)
+state = torch.load(state_path, map_location="cpu")
+model = CLEEGN(n_chan=8, fs=128.0, N_F=8).to(device)
+model.load_state_dict(state["state_dict"])
+summary(model, input_size=(64, 1, 8, 512))
+
 print("model loaded")
 # # create a new inlet to read from the stream
 inlet = StreamInlet(streams[0])
@@ -91,10 +105,12 @@ class StreamerLSL():
         return y, zf
 
     def initialize(self):
-        b, a = self.butter_bandpass(1, 40, 1024, order=5)
+        b, a = self.butter_bandpass(1, 40, 1024, order=5) # 1024
         self.zi = signal.lfilter_zi(b, a)
         self.zi = np.tile(self.zi, (self.eeg_channels, 1))
-        
+        # print(self.zi)
+        # print(b, a)
+        # exit(0)
 
     def preprocess(self):
         
@@ -113,14 +129,16 @@ class StreamerLSL():
         current_time =  time.time()
         sample = np.array(sample)
         timestamp = np.array(timestamp)
-        print("sample shape:", sample.shape)
+        print("read chunk shape:", sample.shape)
 
         ## removal of the mean value of the signal
-        self.send_data1 = self.send_data1 - np.mean(self.send_data1, axis=0)  # CAR
-        
+        #self.send_data1 = self.send_data1 - np.mean(self.send_data1, axis=0)  # CAR
+        self.send_data1 = self.send_data1 - np.expand_dims(np.mean(self.send_data1, axis=1), axis=-1)
+
+        # print(self.send_data1.shape) # (256, 8)
         self.send_data1 = np.array(self.send_data1).T
-        #print(self.send_data1.shape)
-        
+        #print(self.send_data1.mean(axis=1)) # (8, 256)
+
         '''Band pass filtering'''
         order = 5
         hp_cutoff = 40
@@ -130,14 +148,13 @@ class StreamerLSL():
 
         #x = self.butter_bandpass_filter(np.array(self.send_data1).T, lp_cutoff, hp_cutoff, 1000, order=5)
         x, self.zi = self.butter_bandpass_filter(self.send_data1, lp_cutoff, hp_cutoff, 1024, initial=self.zi, order=5)
-        # x = self.send_data1
-        print("max value: ", np.max(x))
-        print("mean value: ", np.mean(x))
+        # print("max value: ", np.max(x))
+        # print("mean value: ", np.mean(x))
 
         self.send_data1 = x.T.tolist()
 
 
-        print("filter: ",time.time() - current_time)
+        #print("filter: ",time.time() - current_time)
         current_time = time.time()
         
         ''' downsampling '''
@@ -175,22 +192,36 @@ class StreamerLSL():
             x = self.dataBuffer.T # eeg_channels*512 
 
             x = x[:self.model_input_chan,:] # select first 8 channels
+
+
+            x = np.expand_dims(np.expand_dims(x, axis=0), axis=0)
+            x = np2TT(x).to(device, dtype=torch.float)
+            model.eval()
+            x = model(x)
+            x = x.view(self.model_input_chan, -1).detach().cpu().numpy()
+
+            """
             x = x.reshape(1, self.model_input_chan, -1, 1) #resize x to make it (1, 8, 512, 1)
-            
             x = model.predict(x[:, :, :self.stream_params['forwardSize'], :])
             x = x.reshape(self.model_input_chan, -1)
+            """
+            
             index = int( self.stream_params['chunkSize'] / self.stream_params['downSamplingFactor'] )
             self.send_data2 = x[:,-2*index:-1*index].T.tolist() 
 
-        print("model: ", time.time() - current_time)
+        #print("model: ", time.time() - current_time)
         
         if any([self.send_ts]):
             ## self.sendData.emit(self.send_ts, self.send_data1, self.send_data2)
             self.update_stream(self.send_ts, self.send_data1, self.send_data2)      
 
     def update_stream(self,send_ts, send_data1, send_data2):
-        self.outlet_stream1.push_chunk(send_data1)
-        self.outlet_stream2.push_chunk(send_data2)
+        # self.outlet_stream1.push_chunk(send_data1)
+        # self.outlet_stream2.push_chunk(send_data2)
+        x = np.asarray(send_data1).T
+        print(x.min(axis=1), x.max(axis=1))
+        self.outlet_stream1.push_chunk(send_data1, timestamp=send_ts[-1])
+        self.outlet_stream2.push_chunk(send_data2, timestamp=send_ts[-1])
         
 
 def main():
