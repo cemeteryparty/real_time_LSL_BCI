@@ -109,7 +109,16 @@ class ArtifactRm_Block():
         print("dest", self.buffer[:, :self.win_size - chunk.shape[1]].shape)
         print("src:", self.buffer[:, chunk.shape[1]:].shape)
         self.buffer[:, :self.win_size - chunk.shape[1]] = self.buffer[:, chunk.shape[1]:]
-        self.buffer[:, :self.win_size - chunk.shape[1]]
+        self.buffer[:, -chunk.shape[1]:] = chunk
+
+        x = self.buffer
+        x = np.expand_dims(np.expand_dims(x, axis=0), axis=0)
+        x = np2TT(x).to(device, dtype=torch.float)
+        self.model.eval()
+        x = self.model(x)
+        x = x.view(self.n_channel, -1).detach().cpu().numpy()
+
+        return x[:, -64: -32]
 
 
 def main():
@@ -132,9 +141,9 @@ def main():
     block2 = ArtifactRm_Block("torch_CLEEGN/tmpfile/bc-12_0010.12_3040.4_8ch/set_{}/{}.pth".format(1, "bc-8chan"))
 
     outlet_1_info = StreamInfo("Pre-pocessedEEG", 'EEG', selcStream.n_chan, 128.0, 'float32', "run0001");
-    # outlet_2_info = StreamInfo("CLEEGNedEEG", 'EEG', selcStream.n_chan, 128.0,'float32', "run0002");
+    outlet_2_info = StreamInfo("CLEEGNedEEG", 'EEG', selcStream.n_chan, 128.0,'float32', "run0002");
     outlet_1 = StreamOutlet(outlet_1_info)
-    # outlet_2 = StreamOutlet(outlet_2_info)
+    outlet_2 = StreamOutlet(outlet_2_info)
     while True:
         pull_kwargs = {"timeout": 1, "max_samples": 256} # "max_samples": 256
         chunk, timestamps = inlet.pull_chunk(**pull_kwargs)
@@ -144,13 +153,15 @@ def main():
             print(f"[x] Loss conection to the stream: {selcStream.name()}...")
             break # TODO: try recovery???
         #print("read chunk", chunk.shape, timestamps.shape)
-        chunk, timestamps = block1.process(chunk, timestamps)
-        block2.process(chunk)
+        chunk_1, timestamps = block1.process(chunk, timestamps)
+        chunk_2 = block2.process(chunk_1)
+        # print(chunk_1.shape, chunk_2.shape)
 
         #print(chunk.min(axis=1), chunk.max(axis=1))
-        chunk = chunk.T
-        # outlet_1.push_chunk(chunk.T.tolist(), timestamp=timestamps[-1])
-        outlet_1.push_chunk(chunk.tolist())
+        #chunk_1 = chunk_1.T
+        outlet_1.push_chunk(chunk_1.T.tolist(), timestamp=timestamps[-1])
+        outlet_2.push_chunk(chunk_2.T.tolist(), timestamp=timestamps[-1])
+        #outlet_1.push_chunk(chunk.tolist())
 
     #     
     #     print(len(chunk), len(timestamps))
