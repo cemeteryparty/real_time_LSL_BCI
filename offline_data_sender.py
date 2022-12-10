@@ -23,7 +23,7 @@ def main():
     fd.close()
     electrode = rows[10][2:2+8]
 
-    info = StreamInfo('BioSemi', 'EEG', 8, 1000, 'float32', 'myuid2424')
+    info = StreamInfo('BioSemi', 'EEG', 8, 1000, 'float32', 'biosemi0001')
     # append some meta-data
     info.desc().append_child_value("manufacturer", "BioSemi")
     channels = info.desc().append_child("channels")
@@ -40,7 +40,7 @@ def main():
     d1 = np.append(np.zeros((128,)), np.ones((128,)))
     d2 = np.append(np.linspace(0, 10, 10), np.linspace(0, 10, 10))
     print("now sending data...")
-    i = 11
+    ts, i = 0.001, 11
     while True:
         i = 11 if i == len(rows) else i
         sample = [float(x) for x in rows[i][2:2+8]]
@@ -49,8 +49,9 @@ def main():
         #     d1[i % 256], d2[i % 1000], d2[i % 1000], d1[i % 256],
         #     d2[i % 1000], d1[i % 256], d2[i % 1000], d1[i % 256]
         # ]
-        outlet.push_sample(sample, float(rows[i][0]))
+        outlet.push_sample(sample, timestamp=ts)
         i += 1
+        ts += 0.001
         # get a time stamp in seconds (we pretend that our samples are actually
         # 125ms old, e.g., as if coming from some external hardware)
         # stamp = local_clock() - 0.001

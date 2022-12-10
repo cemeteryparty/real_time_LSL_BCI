@@ -106,8 +106,6 @@ class ArtifactRm_Block():
         # summary(model, input_size=(64, 1, 8, 512))
 
     def process(self, chunk):
-        print("dest", self.buffer[:, :self.win_size - chunk.shape[1]].shape)
-        print("src:", self.buffer[:, chunk.shape[1]:].shape)
         self.buffer[:, :self.win_size - chunk.shape[1]] = self.buffer[:, chunk.shape[1]:]
         self.buffer[:, -chunk.shape[1]:] = chunk
 
