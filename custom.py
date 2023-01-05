@@ -48,7 +48,6 @@ class PreProcessing(SigIntercept):
         return x, t
 
 
-
 class CLEEGNing(SigIntercept):
 
     def __init__(self, model_path, fsOut, parent):
@@ -76,6 +75,3 @@ class CLEEGNing(SigIntercept):
         x = self.model(x)
         x = x.view(n_channel, -1).detach().cpu().numpy()
         self.buffer[:, -xLen:] = x
-
-        #print(self.tstmps[-1], self.flags[-1])
-        # return np.zeros((8, 0)), 0  # special design, skip update

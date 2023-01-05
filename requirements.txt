@@ -1,0 +1,4 @@
+prettytable
+torchinfo
+mne
+numpy

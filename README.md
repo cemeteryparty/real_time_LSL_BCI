@@ -1,21 +1,17 @@
-# Real-Time-CLEEGN
-
-CLEEGN Real Time System
-
-## Install
+# Install
 
 ```bash
 pip install git+https://github.com/intheon/stream_viewer.git
 conda install -c conda-forge liblsl #linux
 
-pip install prettytable
-pip install tensorflow
+pip install -r requirements.txt
+conda install pytorch torchvision torchaudio cpuonly -c pytorch  # cpu mode
 
 lsl_viewer
 ```
 
 
-## Issue: `qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "" even though it was found."`
+# Issue: `qt.qpa.plugin: Could not load the Qt platform plugin "xcb" in "" even though it was found."`
 
 ```sh
 lsl_viewer
