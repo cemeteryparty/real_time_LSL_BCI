@@ -18,7 +18,7 @@ def main():
     # less locally unique identifier for the stream as far as available (you
     # could also omit it but interrupted connections wouldn't auto-recover).
 
-    fd = open("102022_215547.csv", newline='')
+    fd = open("sample_eeg/102022_215547.csv", newline='')
     rows = list(csv.reader(fd)) # 8 ch, 1000hz
     fd.close()
     electrode = rows[10][2:2+8]

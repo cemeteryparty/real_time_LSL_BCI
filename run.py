@@ -3,6 +3,7 @@ from utils.rtsys import SigIntercept
 from utils.rtsys import BasicRecv
 
 from custom import PreProcessing
+from custom import ChannelShift
 from custom import CLEEGNing
 
 import prettytable as pt
@@ -31,9 +32,12 @@ def main():
 
 
     root = BasicRecv(8, selcStream.srate)
-    """ temporary use local var, module it in future """
     block1 = PreProcessing(1, 40, selcStream.srate, 128.0, parent=root)
-    block2 = CLEEGNing("torch_CLEEGN/tmpfile/bc-12_0010.12_3040.4_8ch/set_{}/{}.pth".format(1, "bc-8chan"), fsOut=128.0, parent=block1)
+    block1_cs = ChannelShift(fsOut=128.0, parent=block1)
+    block2 = CLEEGNing(
+        "torch_CLEEGN/tmpfile/bc-12_0010.12_3040.4_8ch/set_{}/{}.pth".format(1, "bc-8chan"),
+        fsOut=128.0, parent=block1_cs
+    )
 
     while True:
         pull_kwargs = {"timeout": 1, "max_samples": 256}
@@ -46,9 +50,10 @@ def main():
 
         root.update(chunk, timestamps)
         block1.update()
+        block1_cs.update()
         block2.update()
 
-        block1.send(delay=2)
+        block1_cs.send(delay=2)
         block2.send(delay=2)
 
 

@@ -21,7 +21,7 @@ class SigIntercept(object):
             outletInfo = StreamInfo(name, "EEG", bufferDim, sfreq, "float32", f"run_{int(time.time())}")
             self.outlet = StreamOutlet(outletInfo)
         self.parent = parent
-        self.latestDataLen = 0  # latest chunk start pos
+        self.latestDataLen = 0  # latest chunk start pos, delete, use flag instead
         self.nextFID = 0  # next update flag id
 
     def update(self, x=None, t=None):
