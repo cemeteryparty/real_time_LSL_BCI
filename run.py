@@ -16,7 +16,7 @@ import os
 
 def main():
     print("looking for an EEG stream...")
-    streamList = pylsl.resolve_stream("type", "EEG")
+    streamList = pylsl.resolve_streams()
     streamList = [StreamInfo_(s) for s in streamList]
 
     tb = pt.PrettyTable()
