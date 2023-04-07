@@ -30,7 +30,6 @@ def main():
     selcStream = streamList[streamID]
     inlet = pylsl.StreamInlet(selcStream.lsl_stream())
 
-
     root = BasicRecv(8, selcStream.srate)
     block1 = PreProcessing(1, 40, selcStream.srate, 128.0, parent=root)
     block1_cs = ChannelShift(fsOut=128.0, parent=block1)

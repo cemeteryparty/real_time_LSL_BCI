@@ -24,39 +24,45 @@ class PreProcessing(SigIntercept):
             parent=parent
         )
         
-        self.sos = self.__butter_bandpass(lowcut, highcut, fsIn, order=5)
+        self.sos = self.__butter_bandpass(lowcut, highcut, fsIn, order=3)
         self.zi = signal.sosfilt_zi(self.sos)
         self.zi = np.repeat(np.expand_dims(self.zi, axis=1), self.bufShape[0], axis=1)
-        self.step = math.ceil(fsIn / fsOut)
-        self.a0 = 0  # next start index, downsample issue
-        # os.system("echo \"{}\" > saved.csv".format(
-        #     "Fp1,Fp2,T7,T8,O1,O2,Fz,Pz"))  # reset
+        self.b_notch, self.a_notch = signal.iirnotch(w0=50.0, Q=20.0, fs=fsIn)  #Lab60, BCIERN50
+        
+        self.T = 1.0 / fsOut # out period
 
     def __butter_bandpass(self, lowcut, highcut, fs, order=3):
         sos = signal.butter(order, [lowcut, highcut], fs=fs, btype='band', output='sos')
         return sos
 
     def befed(self):
-        xLen = self.parent.latestDataLen
-        x = self.parent.buffer[:, -xLen:].copy()
+        buf = self.parent.buffer
+        offset_l = np.searchsorted(self.parent.flags, self.nextFID, side="left")
+        xLen = buf.shape[1] - offset_l
+
+        x = buf[:, -xLen:].copy()
         t = self.parent.tstmps[-xLen:].copy()
 
-        """ Common Average Re-reference (CAR) """
-        x -= x.mean(axis=0)
+        x -= x.mean(axis=1, keepdims=True) # channel 0-mean
 
-        """ Band-pass filtering """
-        x, self.zi = signal.sosfilt(self.sos, x, zi=self.zi)
+        """ Norm to near 1 """
+        for c in range(self.bufShape[0]):
+            mu, s = buf[c, :].mean(), buf[c, :].std() * 2.0
+            bar = (mu - s <= buf[c, :]) & (buf[c, :] <= mu + s)
+            x[c, :] /= buf[c, bar].std()
 
-        # """ Downsample """
-        indices = np.arange(self.a0, x.shape[1], dtype=int)[::self.step]
-        x, t = x[:, indices], t[indices]
+        x -= x.mean(axis=0)  # avg_reref
 
-        self.a0 = indices[-1] + self.step - xLen
-        # for ix in range(x.shape[1]):
-        #     l = x[:, ix].tolist()
-        #     os.system("echo \"{:.4f},{:.4f},{:.4f},{:.4f},{:.4f},{:.4f},{:.4f},{:.4f}\" >> saved.csv".format(
-        #         *l))
-        return x, t
+        x = signal.filtfilt(self.b_notch, self.a_notch, x) # notch 60
+
+        x, self.zi = signal.sosfilt(self.sos, x, zi=self.zi) # bpf 1,40
+
+        """ Downsample """
+        t_new = np.arange(t[0], t[-1] + self.T, self.T)
+        x_new = np.zeros((8, t_new.size))
+        for c in range(self.bufShape[0]):
+            x_new[c] = np.interp(t_new, t, x[c])
+        return x_new, t_new
 
 class ChannelShift(SigIntercept):
 
@@ -65,10 +71,11 @@ class ChannelShift(SigIntercept):
             parent.bufShape[0], raiseStream=True, name="Pre-pocessedEEG", sfreq=fsOut,
             parent=parent
         )
-        sigmas = [
-            5.353120,14.690568,7.081487,6.351827,6.620898,9.770247,6.404835,8.365208
-        ]  ######## to be updated
-        self.sigmas = np.asarray(sigmas, dtype=np.float32)
+        # sigmas = [
+        #     5.353120,14.690568,7.081487,6.351827,6.620898,9.770247,6.404835,8.365208
+        # ]
+        # self.sigmas = np.asarray(sigmas, dtype=np.float32)
+        self.sigmas = np.ones((self.bufShape[0], ), dtype=np.float32) * 7
 
         # sync, add feature to SigIntercept?
         self.tstmps = self.parent.tstmps  # point to parent tstmps
@@ -80,7 +87,9 @@ class ChannelShift(SigIntercept):
         coef = self.buffer.std(axis=1) / stds
         coef = np.expand_dims(coef, axis=-1)
         self.buffer /= coef
-        # self.buffer *= 1e6  # BCI_ERN
+
+        # self.buffer *= 1e6  # BCI_ERN, easy
+        # self.buffer = self.parent.buffer.copy()  # no shift
 
 class CLEEGNing(SigIntercept):
 
@@ -99,10 +108,11 @@ class CLEEGNing(SigIntercept):
         self.flags = self.parent.flags  # point to parent flags
 
     def update(self):  # overridding `SigIntercept` update()
+        self.buffer = self.parent.buffer.copy()
         self.model.eval()
 
         xLen, n_channel = 512, self.bufShape[0]
-        x = self.parent.buffer[:, -xLen:].copy()
+        x = self.buffer[:, -xLen:]
 
         x = np.expand_dims(np.expand_dims(x, axis=0), axis=0)
         x = np2TT(x).to(device, dtype=torch.float)
